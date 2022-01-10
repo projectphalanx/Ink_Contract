@@ -50,23 +50,78 @@ pub mod dark_dex {
     impl dark_dex {       
  
         #[ink(constructor)]
-        pub fn new(acct:AccountId,  size: u64)->Self{
-          Self{         
-          bids:vec![Order::acct(acct),
-                    Order::status(Status::Active),
-                    Order::side(Side::Buy),
-                    Order::size(size),
-                    Order::filled(0)] ,
-          asks:vec![Order::acct(acct),
-                    Order::status(Status::Active),
-                    Order::side(Side::Sell),
-                    Order::size(size),
-                    Order::filled(0)],
+        pub fn new()->Self{
+          Self{
+          bids:Vec::new(),
+          asks:Vec::new(),
+
         }
     }
 
 
-  
+        #[ink(message)]
+        pub fn _remaining(&mut self,side:Side) -> u64 {
+
+          match side{
+            Side::Buy =>{
+
+          let size = self.bids[3].clone();
+          let filled = self.bids[4].clone();
+          let sz=match size{
+            Order::size(value)=>value,
+            _ =>0
+          };
+          let fl=match filled{
+            Order::filled(value)=>value,
+            _=>0
+          };
+          let remain = sz-fl;
+          return remain
+        }
+
+        Side::Sell =>{
+
+          let size = self.asks[3].clone();
+          let filled = self.asks[4].clone();
+          let sz=match size{
+            Order::size(value)=>value,
+            _ =>0
+          };
+          let fl=match filled{
+            Order::filled(value)=>value,
+            _=>0
+          };
+          let remain = sz-fl;
+          return remain
+        }
+
+
+
+        }
+
+        }
+        //   self.size - self.filled
+          
+
+           
+           #[ink(message)]
+        pub fn _init(&mut self,acct:AccountId,  size: u64){
+          self.bids.push(Order::acct(acct));
+          self.bids.push(Order::status(Status::Active));
+          self.bids.push(Order::side(Side::Buy));
+          self.bids.push(Order::size(size));
+          self.bids.push(Order::filled(0));
+
+          
+          self.asks.push(Order::acct(acct));
+          self.asks.push(Order::status(Status::Active));
+          self.asks.push(Order::side(Side::Buy));
+          self.asks.push(Order::size(size));
+          self.asks.push(Order::filled(0));
+
+
+          
+          }
     
         #[ink(message)]
         pub fn _cancel(&mut self,side:Side){
@@ -97,4 +152,3 @@ pub mod dark_dex {
 
 
   
-
