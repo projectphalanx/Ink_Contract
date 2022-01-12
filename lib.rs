@@ -60,13 +60,14 @@ pub mod dark_dex {
 
 
         #[ink(message)]
-        pub fn _remaining(&mut self,side:Side) -> u64 {
+        //nbr is the order number--> from 1 to n
+        pub fn _remaining(&mut self,side:Side,nbr:u8) -> u64 {
 
           match side{
             Side::Buy =>{
 
-          let size = self.bids[3].clone();
-          let filled = self.bids[4].clone();
+          let size = self.bids[3+5*(nbr-1)].clone();
+          let filled = self.bids[4+5*(nbr-1)].clone();
           let sz=match size{
             Order::size(value)=>value,
             _ =>0
@@ -81,8 +82,8 @@ pub mod dark_dex {
 
         Side::Sell =>{
 
-          let size = self.asks[3].clone();
-          let filled = self.asks[4].clone();
+          let size = self.asks[3+5*(nbr-1)].clone();
+          let filled = self.asks[4+5*(nbr-1)].clone();
           let sz=match size{
             Order::size(value)=>value,
             _ =>0
