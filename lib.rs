@@ -30,11 +30,11 @@ pub mod dark_dex {
     #[derive(PartialEq, Eq, Debug, Clone, scale::Encode, scale::Decode,SpreadLayout)]
     #[cfg_attr(feature="std",derive(scale_info::TypeInfo,::ink_storage::traits::StorageLayout,::ink_storage::traits::PackedLayout))]
     pub enum Order {
-      acct(AccountId),
-      status(Status),
-      side(Side),
-      size(u64),
-      filled(u64),
+      Acct(AccountId),
+      Status(Status),
+      Side(Side),
+      Size(u64),
+      Filled(u64),
   }
 
 
@@ -42,16 +42,20 @@ pub mod dark_dex {
 
     #[ink(storage)]
     #[cfg_attr(feature="std",derive(::scale_info::TypeInfo))]
-    pub struct dark_dex {  
+    pub struct DarkDex {
+        pub ordersb:u64,
+        pub ordersa:u64,
         pub bids: Vec<Order>,
         pub asks: Vec<Order>,        
     }
 
-    impl dark_dex {       
+    impl DarkDex {       
  
         #[ink(constructor)]
         pub fn new()->Self{
           Self{
+          ordersb:0, //number of bids
+          ordersa:0, //number of asks
           bids:Vec::new(),
           asks:Vec::new(),
 
@@ -60,96 +64,119 @@ pub mod dark_dex {
 
 
         #[ink(message)]
-        //nbr is the order number--> from 1 to n
-        pub fn _remaining(&mut self,side:Side,nbr:u8) -> u64 {
+        pub fn _remaining(&mut self,side:Side,order:u64) -> u64 {
 
           match side{
             Side::Buy =>{
+              assert_eq!(order<= self.ordersb,true);
+              let vc=self._order_get(side,order);
+              let ind0= vc.iter().position(|r| r == &Order::Side(Side::Buy)).unwrap() as usize;
+              let size = vc[ind0].clone();
+              let filled = vc[ind0+1].clone();
+              let sz=match size{
+                Order::Size(value)=>value,
+                _ =>0
+              };
+              let fl=match filled{
+                Order::Filled(value)=>value,
+                _=>0
+              };
+              let remain = sz-fl;
+              return remain
+            }
 
-          let size = self.bids[3+5*(nbr-1)].clone();
-          let filled = self.bids[4+5*(nbr-1)].clone();
-          let sz=match size{
-            Order::size(value)=>value,
-            _ =>0
-          };
-          let fl=match filled{
-            Order::filled(value)=>value,
-            _=>0
-          };
-          let remain = sz-fl;
-          return remain
+            Side::Sell =>{
+              assert_eq!(order<= self.ordersa,true);
+              let vc=self._order_get(side,order);
+              let ind0= vc.iter().position(|r| r == &Order::Side(Side::Sell)).unwrap() as usize;
+              let size = vc[ind0].clone();
+              let filled = vc[ind0+1].clone();
+              let sz=match size{
+                Order::Size(value)=>value,
+                _ =>0
+              };
+              let fl=match filled{
+                Order::Filled(value)=>value,
+                _=>0
+              };
+              let remain = sz-fl;
+              return remain
         }
 
-        Side::Sell =>{
-
-          let size = self.asks[3+5*(nbr-1)].clone();
-          let filled = self.asks[4+5*(nbr-1)].clone();
-          let sz=match size{
-            Order::size(value)=>value,
-            _ =>0
-          };
-          let fl=match filled{
-            Order::filled(value)=>value,
-            _=>0
-          };
-          let remain = sz-fl;
-          return remain
-        }
-
-
-
         }
 
         }
-        //   self.size - self.filled
-          
 
-           
            #[ink(message)]
-        pub fn _init(&mut self,acct:AccountId,  size: u64){
-          self.bids.push(Order::acct(acct));
-          self.bids.push(Order::status(Status::Active));
-          self.bids.push(Order::side(Side::Buy));
-          self.bids.push(Order::size(size));
-          self.bids.push(Order::filled(0));
+           //Add a bid order
+        pub fn add_bid(&mut self,acct:AccountId,  size: u64){
+          self.bids.push(Order::Acct(acct));
+          self.bids.push(Order::Status(Status::Active));
+          self.bids.push(Order::Side(Side::Buy));
+          self.bids.push(Order::Size(size));
+          self.bids.push(Order::Filled(0));
+          self.ordersb+=1;       
+          }
 
-          
-          self.asks.push(Order::acct(acct));
-          self.asks.push(Order::status(Status::Active));
-          self.asks.push(Order::side(Side::Buy));
-          self.asks.push(Order::size(size));
-          self.asks.push(Order::filled(0));
-
-
-          
+          #[ink(message)]
+          //Add an ask order
+        pub fn add_ask(&mut self,acct:AccountId,  size: u64){         
+          self.asks.push(Order::Acct(acct));
+          self.asks.push(Order::Status(Status::Active));
+          self.asks.push(Order::Side(Side::Sell));
+          self.asks.push(Order::Size(size));
+          self.asks.push(Order::Filled(0));
+          self.ordersa+=1;          
           }
     
         #[ink(message)]
-        pub fn _cancel(&mut self,side:Side){
+        //Cancelling a given order, using a IF method, but we could also use a Match pattern method
+        pub fn _cancel(&mut self,side:Side,order:u64){
           if side == Side::Buy{
-            let index= self._index(side) as usize;
-            self.bids[index]=self::Order::status(Status::Inactive);
+            let a = 5*(order-1);
+            for i in a..a+5{
+              let ii= i as usize;
+              if self.bids[ii]==self::Order::Status(Status::Active){
+                self.bids[ii]=self::Order::Status(Status::Inactive);
+              }
+            }
       }else{
-        let index = self._index(side) as usize;
-        self.asks[index]=self::Order::status(Status::Inactive);
+            let a = 5*(order-1);
+                for i in a..a+5{
+                  let ii= i as usize;
+                  if self.asks[ii]==self::Order::Status(Status::Active){
+                    self.asks[ii]=self::Order::Status(Status::Inactive);
+                  }
+                }
           }
             
             }
 
         #[ink(message)]
-        pub fn _index(&mut self,side:Side)->u8{
-
+        //Here we get an order, based on its side, and its number (order nbr.1, order nbr.2, order nbr.n)
+        //We are basically getting a slice of the vector of interest
+        pub fn _order_get(&mut self,side:Side,order:u64)->Vec<Order>{
+          
+          assert_eq!(order>= 1,true);
           match side{
-            Side::Buy => self.bids.iter().position(|r| r == &Order::side(Side::Buy)).unwrap() as u8,
-            Side::Sell => self.bids.iter().position(|r| r == &Order::side(Side::Sell)).unwrap() as u8,
+            Side::Buy => {
+              assert_eq!(order<= self.ordersb,true);
+              let id0=5*(order-1) as usize;
+              (&self.bids[id0..id0+5]).to_vec()
+              },
+            Side::Sell => {
+              assert_eq!(order<= self.ordersa,true);              
+              let id0=5*(order-1) as usize;
+              (&self.asks[id0..id0+5]).to_vec()
+            
+            },
 
           }
+
+
         }
 
           }
 
     }
 
-
-
-  
