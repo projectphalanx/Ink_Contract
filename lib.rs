@@ -130,8 +130,8 @@ pub mod dark_dex {
           }
     
         #[ink(message)]
-        //Cancelling a given order, using a IF method, but we could also use a Match pattern method
-        pub fn _cancel(&mut self,side:Side,order:u64){
+        //deactivating a given order, using a IF method, but we could also use a Match pattern method
+        pub fn _deactivate(&mut self,side:Side,order:u64){
           if side == Side::Buy{
             let a = 5*(order-1);
             for i in a..a+5{
