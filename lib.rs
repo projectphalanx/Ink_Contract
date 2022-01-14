@@ -70,7 +70,7 @@ pub mod dark_dex {
             Side::Buy =>{
               assert_eq!(order<= self.ordersb,true);
               let vc=self._order_get(side,order);
-              let ind0= vc.iter().position(|r| r == &Order::Side(Side::Buy)).unwrap() as usize;
+              let ind0= vc.iter().position(|r| r == &Order::Side(Side::Buy)).unwrap()+1 as usize;
               let size = vc[ind0].clone();
               let filled = vc[ind0+1].clone();
               let sz=match size{
@@ -88,7 +88,7 @@ pub mod dark_dex {
             Side::Sell =>{
               assert_eq!(order<= self.ordersa,true);
               let vc=self._order_get(side,order);
-              let ind0= vc.iter().position(|r| r == &Order::Side(Side::Sell)).unwrap() as usize;
+              let ind0= vc.iter().position(|r| r == &Order::Side(Side::Sell)).unwrap()+1 as usize;
               let size = vc[ind0].clone();
               let filled = vc[ind0+1].clone();
               let sz=match size{
