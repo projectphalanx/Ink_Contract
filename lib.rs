@@ -177,7 +177,47 @@ pub mod dark_dex {
         }
 
           }
+    
+    #[cfg(test)]
+          mod tests {
+            use super::*;
+            use ink_lang as ink;
+            
+            //check the number of orders added
+            #[ink::test]
+            fn test0(){
+              let mut dex = DarkDex::new();
+              dex.add_bid(AccountId::from([0x01; 32]),50000);
+              dex.add_bid(AccountId::from([0x01; 32]),30000);
+              dex.add_ask(AccountId::from([0x01; 32]),20000);
+              //println!("{}",dex.bids);
+              assert_eq!(2,dex.ordersb);
+
+            }
+
+
+
+            // Check the size of the extracted order
+            #[ink::test]
+            fn test1(){
+              let mut dex = DarkDex::new();
+              dex.add_bid(AccountId::from([0x01; 32]),50000);
+              dex.add_bid(AccountId::from([0x01; 32]),30000);
+              dex.add_ask(AccountId::from([0x01; 32]),20000);
+
+              //extract the second bid order & check its size
+              let b0 = dex._order_get(Side::Buy,2);
+              println!("the output is: {:?}",b0[3]);
+              let b = match b0[3]{
+                Order::Size(val) => val,
+                _ => 0,
+              };
+
+              assert_eq!(30000,b);
+            }
+
+          }
 
     }
 
-//Need to add a few tests
+
