@@ -175,6 +175,16 @@ pub mod dark_dex {
 
 
         }
+        
+        #[ink(message)]
+        pub fn dum(&mut self){
+              
+              self.add_bid(AccountId::from([0x01; 32]),50000);
+              self.add_bid(AccountId::from([0x01; 32]),30000);
+              self.add_bid(AccountId::from([0x01; 32]),25800);
+              self.add_ask(AccountId::from([0x01; 32]),20000);
+              
+        }
 
           }
     
@@ -187,9 +197,7 @@ pub mod dark_dex {
             #[ink::test]
             fn test0(){
               let mut dex = DarkDex::new();
-              dex.add_bid(AccountId::from([0x01; 32]),50000);
-              dex.add_bid(AccountId::from([0x01; 32]),30000);
-              dex.add_ask(AccountId::from([0x01; 32]),20000);
+              dex.dum();
               //println!("{}",dex.bids);
               assert_eq!(2,dex.ordersb);
 
@@ -201,9 +209,7 @@ pub mod dark_dex {
             #[ink::test]
             fn test1(){
               let mut dex = DarkDex::new();
-              dex.add_bid(AccountId::from([0x01; 32]),50000);
-              dex.add_bid(AccountId::from([0x01; 32]),30000);
-              dex.add_ask(AccountId::from([0x01; 32]),20000);
+              dex.dum();
 
               //extract the second bid order & check its size
               let b0 = dex._order_get(Side::Buy,2);
