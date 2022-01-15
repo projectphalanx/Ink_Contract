@@ -62,7 +62,49 @@ pub mod dark_dex {
         }
     }
 
-
+        
+        
+         #[ink(message)]
+        pub fn fill(&mut self,side:Side,size:u64,order:u64){
+    
+               
+                 match side{
+                   Side::Buy =>{
+                    assert_eq!(order<= self.ordersb,true);
+                    let find= ((order*5)-1) as usize;
+                    let f0 = match self.bids[find]{
+                      Order::Filled(val) =>val,
+                      _=>0,
+                    };
+                    let f1 = match self.bids[find-1]{
+                      Order::Size(val) =>val,
+                      _=>0,
+                    };
+                    self.bids[find]=Order::Filled(&f0+size);
+                    if f0==f1 {
+                      self._deactivate(side,order);
+                    }
+                   },
+                   Side::Sell =>{
+                    assert_eq!(order<= self.ordersb,true);
+                    let find= ((order*5)-1) as usize;
+                    let f0 = match self.asks[find]{
+                      Order::Filled(val) =>val,
+                      _=>0,
+                    };
+                    let f1 = match self.asks[find-1]{
+                      Order::Size(val) =>val,
+                      _=>0,
+                    };
+                    self.asks[find]=Order::Filled(&f0+size);
+                    if f0==f1 {
+                      self._deactivate(side,order);
+                    }
+                   },
+                 }
+ 
+        }
+        
         #[ink(message)]
         pub fn _remaining(&mut self,side:Side,order:u64) -> u64 {
 
