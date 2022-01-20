@@ -414,5 +414,19 @@ mod phalanx {
             assert_eq!(62580, phalanx.queue_get_size(Side::Ask));
             assert_eq!(0, phalanx.queue_get_size(Side::Bid));
         }
+
+        #[ink::test]
+        fn test_scenario_3() {
+            // Init scenario 1
+            // Add new order fo account 1 with 40000 (should replace the 50000 order)
+            // Check the queue length and size
+            let mut phalanx = Phalanx::default();
+            phalanx._init_scenario_1();
+            phalanx.order(AccountId::from([0x01; 32]), Side::Ask, 40000);
+            assert_eq!(3, phalanx.queue_get_length(Side::Ask));
+            assert_eq!(1, phalanx.queue_get_length(Side::Bid));
+            assert_eq!(72580, phalanx.queue_get_size(Side::Ask));
+            assert_eq!(20000, phalanx.queue_get_size(Side::Bid));
+        }
     }
 }
