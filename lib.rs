@@ -9,6 +9,8 @@ mod phalanx {
         Lazy,
     };
 
+    use std::cmp;
+
     // #[derive(
     //     Copy, PartialEq, Eq, Debug, Clone, scale::Encode, scale::Decode, PackedLayout, SpreadLayout,
     // )]
@@ -89,6 +91,13 @@ mod phalanx {
     //     }
     // }
 
+    fn _trigger_trade(size: u64, price: u64, ask_acct: &AccountId, bid_acct: &AccountId) {
+        println!(
+            "Triggering Trade @ {:?}, Size={}, Accounts={:?}/{:?}",
+            price, size, ask_acct, bid_acct
+        );
+    }
+
     #[ink(storage)]
     //#[cfg_attr(feature="std",derive(scale_info::TypeInfo))]
     pub struct Phalanx {
@@ -114,7 +123,9 @@ mod phalanx {
         }
 
         #[ink(message)]
-        //Add a bid order
+        //The "order" function adds a bid ora ask order for acct
+        // acct can only have a single order in the queues. With the call of "order", any previous order of acct
+        // is deleted
         pub fn order(&mut self, acct: AccountId, side: Side, size: u64) {
             // Check Account is valid?
             // If not, return an error?
@@ -161,11 +172,49 @@ mod phalanx {
         // Return size of queue
         #[ink(message)]
         pub fn queue_get_size(&mut self, side: Side) -> u64 {
- match side {
-              Side::Bid => self.bids.iter().map(|x| x.size).sum(),
-              Side::Ask => self.asks.iter().map(|x| x.size).sum(),
-          }
-      }
+            match side {
+                Side::Bid => self.bids.iter().map(|x| x.size).sum(),
+                Side::Ask => self.asks.iter().map(|x| x.size).sum(),
+            }
+        }
+
+        // Internal function to matches bids and asks and triggers transaction at the current price
+        fn _clear_orders_at_price(&mut self, price: u64) {
+            // Repeat until 1 queue is empty
+            //  Take 1st orders in both queues
+            //  Create a transaction at price between the 2 accounts
+            //  Remove smallest order and reduce largest order accordingly (or remove both is same size)
+
+            // If any of the transactions fails?? (ex: lack of gas, network issues)
+            // Probably resolve anyways and clear the queue
+            // trade exec should be async in some ways. Not possible to wait for result else order book would be stuck
+
+            loop {
+                if self.bids.len() == 0 {
+                    break;
+                }
+                if self.asks.len() == 0 {
+                    break;
+                }
+
+                let bid = self.bids.first().unwrap();
+                let ask = self.asks.first().unwrap();
+                let trade_size = cmp::min(bid.size, ask.size);
+                _trigger_trade(trade_size, price, &ask.acct, &bid.acct); // Check for success?
+                if bid.size == trade_size {
+                    self.bids.remove(0);
+                } else {
+                    let first = self.bids.first_mut().unwrap();
+                    first.size = first.size - trade_size;
+                };
+                if ask.size == trade_size {
+                    self.asks.remove(0);
+                } else {
+                    let first = self.asks.first_mut().unwrap();
+                    first.size = first.size - trade_size;
+                };
+            }
+        }
 
         // #[ink(message)]
         // pub fn insert_order(&mut self, order: Order, px_u64: u64) {
@@ -302,10 +351,17 @@ mod phalanx {
             //     println!("TRADE EXECUTED @ {:?}, SIZE={}", px_u64, exec_size);
             //     //TODO: finish the rest of the logic when executing a trade
         }
-        pub fn _init_scenario_1(&mut self) {
+        fn _init_scenario_1(&mut self) {
             self.order(AccountId::from([0x01; 32]), Side::Ask, 50000);
             self.order(AccountId::from([0x02; 32]), Side::Ask, 30000);
             self.order(AccountId::from([0x03; 32]), Side::Ask, 2580);
+            self.order(AccountId::from([0x04; 32]), Side::Bid, 20000);
+        }
+
+        fn _init_scenario_2(&mut self) {
+            self.order(AccountId::from([0x03; 32]), Side::Ask, 2580);
+            self.order(AccountId::from([0x01; 32]), Side::Ask, 50000);
+            self.order(AccountId::from([0x02; 32]), Side::Ask, 30000);
             self.order(AccountId::from([0x04; 32]), Side::Bid, 20000);
         }
     }
@@ -315,15 +371,48 @@ mod phalanx {
         use super::*;
         use ink_lang as ink;
 
-        //check the queue length and size
         #[ink::test]
-        fn test0() {
+        fn test_scenario_1() {
+            // Init scenario 1
+            // Check the queue length and size
+            // Trigger clearing at price
+            // Check the queue length and size
             let mut phalanx = Phalanx::default();
             phalanx._init_scenario_1();
+
             assert_eq!(3, phalanx.queue_get_length(Side::Ask));
             assert_eq!(1, phalanx.queue_get_length(Side::Bid));
             assert_eq!(82580, phalanx.queue_get_size(Side::Ask));
             assert_eq!(20000, phalanx.queue_get_size(Side::Bid));
+
+            phalanx._clear_orders_at_price(1);
+
+            assert_eq!(3, phalanx.queue_get_length(Side::Ask));
+            assert_eq!(0, phalanx.queue_get_length(Side::Bid));
+            assert_eq!(62580, phalanx.queue_get_size(Side::Ask));
+            assert_eq!(0, phalanx.queue_get_size(Side::Bid));
+        }
+
+        #[ink::test]
+        fn test_scenario_2() {
+            // Init scenario 2
+            // Check the queue length and size
+            // Trigger clearing at price
+            // Check the queue length and size
+            let mut phalanx = Phalanx::default();
+            phalanx._init_scenario_2();
+
+            assert_eq!(3, phalanx.queue_get_length(Side::Ask));
+            assert_eq!(1, phalanx.queue_get_length(Side::Bid));
+            assert_eq!(82580, phalanx.queue_get_size(Side::Ask));
+            assert_eq!(20000, phalanx.queue_get_size(Side::Bid));
+
+            phalanx._clear_orders_at_price(1);
+
+            assert_eq!(2, phalanx.queue_get_length(Side::Ask));
+            assert_eq!(0, phalanx.queue_get_length(Side::Bid));
+            assert_eq!(62580, phalanx.queue_get_size(Side::Ask));
+            assert_eq!(0, phalanx.queue_get_size(Side::Bid));
         }
     }
 }
