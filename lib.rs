@@ -4,12 +4,11 @@ use ink_lang as ink;
 
 #[ink::contract]
 mod phalanx {
-    use ink_storage::{
-        traits::{PackedLayout, SpreadAllocate, SpreadLayout},
-        Lazy,
-    };
+    use ink_storage::traits::{PackedLayout, SpreadLayout};
 
     use std::cmp;
+    use std::io::Read; // for reqwest blocking get
+                       // use eqwest::blocking::Response;
 
     // #[derive(
     //     Copy, PartialEq, Eq, Debug, Clone, scale::Encode, scale::Decode, PackedLayout, SpreadLayout,
@@ -35,6 +34,16 @@ mod phalanx {
         Ask,
     }
 
+    struct QueuePointer {
+        side: Side,
+        index: usize,
+    }
+    impl QueuePointer {
+        pub fn new(side: Side, index: usize) -> Self {
+            QueuePointer { side, index }
+        }
+    }
+
     #[derive(
         Copy, PartialEq, Eq, Debug, Clone, scale::Encode, scale::Decode, PackedLayout, SpreadLayout,
     )]
@@ -42,15 +51,42 @@ mod phalanx {
     pub struct Order {
         pub acct: AccountId,
         // pub status: Status,
+        pub size: u64,
+        pub side: Side,
+        pub position: u32,
+        // pub filled: u64,
+    }
+
+    impl Order {
+        pub fn new(acct: AccountId, size: u64, side: Side, position: u32) -> Self {
+            // pub fn new(acct: AccountId, side: Side, size: u64) -> Self {
+            Order {
+                acct,
+                size,
+                side,
+                position,
+                // status: Status::Active,
+                // filled: 0,
+            }
+        }
+    }
+
+    #[derive(
+        Copy, PartialEq, Eq, Debug, Clone, scale::Encode, scale::Decode, PackedLayout, SpreadLayout,
+    )]
+    #[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
+    struct OrderInternal {
+        acct: AccountId,
+        // pub status: Status,
         // pub side: Side,
         pub size: u64,
         // pub filled: u64,
     }
 
-    impl Order {
-        pub fn new(acct: AccountId, size: u64) -> Self {
+    impl OrderInternal {
+        fn new(acct: AccountId, size: u64) -> Self {
             // pub fn new(acct: AccountId, side: Side, size: u64) -> Self {
-            Order {
+            OrderInternal {
                 acct,
                 // status: Status::Active,
                 // side,
@@ -91,6 +127,20 @@ mod phalanx {
     //     }
     // }
 
+    fn _sync_http_request() {
+        let r_res = reqwest::blocking::get("http://httpbin.org/get");
+        let mut res = match r_res {
+            Ok(r) => r,
+            Err(_e) => return,
+        };
+
+        let mut body = String::new();
+        res.read_to_string(&mut body).unwrap();
+        println!("Status: {}", res.status());
+        println!("Headers:\n{:#?}", res.headers());
+        println!("Body:\n{}", body);
+    }
+
     fn _trigger_trade(size: u64, price: u64, ask_acct: &AccountId, bid_acct: &AccountId) {
         println!(
             "Triggering Trade @ {:?}, Size={}, Accounts={:?}/{:?}",
@@ -101,8 +151,8 @@ mod phalanx {
     #[ink(storage)]
     //#[cfg_attr(feature="std",derive(scale_info::TypeInfo))]
     pub struct Phalanx {
-        pub bids: Vec<Order>,
-        pub asks: Vec<Order>,
+        bids: Vec<OrderInternal>,
+        asks: Vec<OrderInternal>,
         // trade_histories: ink_storage::collections::HashMap<AccountId, Vec<Trade>>,
     }
 
@@ -132,23 +182,19 @@ mod phalanx {
 
             // Locate an existing order for this account in bids and asks queues (only 1 order per account)
             // If order found, remove it. Will be replace by a the new order (can change side)
-            let o_acct_pos_bid = self.bids.iter().position(|&x| x.acct == acct);
-            match o_acct_pos_bid {
-                Some(index) => {
-                    self.bids.remove(index);
+            match self._queue_account_get(acct) {
+              Some(queue_pointer) => {
+                match queue_pointer.side {
+                  Side::Bid => {self.bids.remove(queue_pointer.index);}
+                  Side::Ask => {self.asks.remove(queue_pointer.index);}
                 }
-                None => {
-                    let o_acct_pos_ask = self.asks.iter().position(|&x| x.acct == acct);
-                    match o_acct_pos_ask {
-                        Some(index) => {
-                            self.asks.remove(index);
-                        }
-                        None => {}
-                    }
-                }
-            }
+
+              }
+              None => {}
+            };
+            
             // Now acocunt has no order in queue. Add order
-            let order = Order::new(acct, size);
+            let order = OrderInternal::new(acct, size);
             match side {
                 Side::Bid => {
                     self.bids.push(order);
@@ -176,6 +222,27 @@ mod phalanx {
                 Side::Bid => self.bids.iter().map(|x| x.size).sum(),
                 Side::Ask => self.asks.iter().map(|x| x.size).sum(),
             }
+        }
+
+        // Internal function to find side and queue position of an account
+        fn _queue_account_get(&mut self, acct: AccountId) -> Option<QueuePointer> {
+            let mut o_queue_pointer = None;
+            let o_acct_pos_bid = self.bids.iter().position(|&x| x.acct == acct);
+            match o_acct_pos_bid {
+                Some(index) => {
+                    o_queue_pointer = Some(QueuePointer::new(Side::Bid, index));
+                }
+                None => {
+                    let o_acct_pos_ask = self.asks.iter().position(|&x| x.acct == acct);
+                    match o_acct_pos_ask {
+                        Some(index) => {
+                            o_queue_pointer = Some(QueuePointer::new(Side::Ask, index));
+                        }
+                        None => {}
+                    }
+                }
+            }
+            o_queue_pointer
         }
 
         // Internal function to matches bids and asks and triggers transaction at the current price
@@ -216,24 +283,13 @@ mod phalanx {
             }
         }
 
-        // #[ink(message)]
-        // pub fn insert_order(&mut self, order: Order, px_u64: u64) {
-        //     if order.status == Status::Active {
-        //         //Users are only allowed to have one active order at a time.
-        //         //If the user has any existing orders, we cancel them first.
-        //         self.cancel_user_orders(order.acct.clone());
-        //         if order.side == Side::Bid {
-        //             self.match_buy_order(order, px_u64);
-        //         } else if order.side == Side::Ask {
-        //             self.match_sell_order(order, px_u64);
-        //         }
-        //     }
-        //     //Remove inactive orders
-        //     self.cleanup();
-        // }
 
+        // Extrnal get command to retrieve current order for account
         #[ink(message)]
-        pub fn find_order_by_acct(&mut self, acct: AccountId) -> Option<Order> {
+        pub fn order_get(&mut self, acct: AccountId) -> Option<Order> {
+          self._queue_account_get(acct);
+
+
             // let bids = &self.bids;
             // for bid in bids.iter() {
             //     if bid.acct == acct {
@@ -250,15 +306,16 @@ mod phalanx {
         }
 
         #[ink(message)]
-        pub fn cancel_user_orders(&mut self, acct: AccountId) {
+        pub fn order_cancel(&mut self, _acct: AccountId) {
             // match self.find_order_by_acct(acct) {
             //     Some(mut order) => order.cancel(),
             //     None => {}
             // }
+            todo!("Implement")
         }
 
-        #[ink(message)]
-        pub fn match_buy_order(&mut self, buy_order: Order, px_u64: u64) {
+        // #[ink(message)]
+        // pub fn match_buy_order(&mut self, buy_order: Order, px_u64: u64) {
             // let asks = self.asks.clone();
             // for ask in asks.iter() {
             //     if Self::pretrade_checks(&self, *ask, px_u64) {
@@ -271,10 +328,10 @@ mod phalanx {
             //     }
             // }
             // self.bids.push(buy_order);
-        }
+        // }
 
-        #[ink(message)]
-        pub fn match_sell_order(&mut self, sell_order: Order, px_u64: u64) {
+        // #[ink(message)]
+        // pub fn match_sell_order(&mut self, sell_order: Order, px_u64: u64) {
             // let bids = &self.bids;
             // for bid in bids.iter() {
             //     if Self::pretrade_checks(&self, *bid, px_u64) {
@@ -287,7 +344,7 @@ mod phalanx {
             //     }
             // }
             // self.asks.push(sell_order);
-        }
+        // }
 
         // #[ink(message)]
         // pub fn pretrade_checks(&self, order: Order, px_u64: u64) -> bool {
@@ -298,22 +355,22 @@ mod phalanx {
         // is_valid
         // }
 
-        #[ink(message)]
-        pub fn cleanup(&mut self) {
+        // #[ink(message)]
+        // pub fn cleanup(&mut self) {
             // self.bids.retain(|order| order.status == Status::Active);
             // self.asks.retain(|order| order.status == Status::Active);
-        }
+        // }
 
         // This function needs to:
         // 1) Store the size filled by both the buy order and the sell order
         // 2) Save the trade to the trade history vec of both the buyer and seller
         // 3) Transfer the corresponding tokens to/from the buyer and seller
-        pub fn exec_trade(
-            buy_order: &mut Order,
-            sell_order: &mut Order,
+        // pub fn exec_trade(
+        //     buy_order: &mut Order,
+        //     sell_order: &mut Order,
             // px_u64: u64,
             // trade_histories: &mut ink_storage::collections::HashMap<AccountId, Vec<Trade>>,
-        ) {
+        // ) {
             //     let exec_size =
             //         scale_info::prelude::cmp::min(buy_order.remaining(), sell_order.remaining());
             //     buy_order.fill(exec_size);
@@ -350,7 +407,9 @@ mod phalanx {
 
             //     println!("TRADE EXECUTED @ {:?}, SIZE={}", px_u64, exec_size);
             //     //TODO: finish the rest of the logic when executing a trade
-        }
+        // }
+
+
         fn _init_scenario_1(&mut self) {
             self.order(AccountId::from([0x01; 32]), Side::Ask, 50000);
             self.order(AccountId::from([0x02; 32]), Side::Ask, 30000);
@@ -363,6 +422,10 @@ mod phalanx {
             self.order(AccountId::from([0x01; 32]), Side::Ask, 50000);
             self.order(AccountId::from([0x02; 32]), Side::Ask, 30000);
             self.order(AccountId::from([0x04; 32]), Side::Bid, 20000);
+        }
+
+        fn _test_http_1(&mut self) {
+            _sync_http_request();
         }
     }
 
@@ -427,6 +490,12 @@ mod phalanx {
             assert_eq!(1, phalanx.queue_get_length(Side::Bid));
             assert_eq!(72580, phalanx.queue_get_size(Side::Ask));
             assert_eq!(20000, phalanx.queue_get_size(Side::Bid));
+        }
+
+        #[ink::test]
+        fn test_http() {
+            let mut phalanx = Phalanx::default();
+            phalanx._test_http_1()
         }
     }
 }
