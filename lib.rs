@@ -148,6 +148,16 @@ mod phalanx {
         );
     }
 
+
+    #[ink(event)]
+    pub struct Transferred {
+      #[ink(topic)]
+      from: Option<AccountId>,
+      #[ink(topic)]
+        to: Option<AccountId>,
+        value: Balance,
+    }
+
     #[ink(storage)]
     //#[cfg_attr(feature="std",derive(scale_info::TypeInfo))]
     pub struct Phalanx {
@@ -207,7 +217,7 @@ mod phalanx {
 
         // Return length of queue
         #[ink(message)]
-        pub fn queue_get_length(&mut self, side: Side) -> u32 {
+        pub fn queue_get_length(&self, side: Side) -> u32 {
             let length = match side {
                 Side::Bid => self.bids.len(),
                 Side::Ask => self.asks.len(),
@@ -217,7 +227,7 @@ mod phalanx {
 
         // Return size of queue
         #[ink(message)]
-        pub fn queue_get_size(&mut self, side: Side) -> u64 {
+        pub fn queue_get_size(&self, side: Side) -> u64 {
             match side {
                 Side::Bid => self.bids.iter().map(|x| x.size).sum(),
                 Side::Ask => self.asks.iter().map(|x| x.size).sum(),
@@ -225,7 +235,7 @@ mod phalanx {
         }
 
         // Internal function to find side and queue position of an account
-        fn _queue_account_get(&mut self, acct: AccountId) -> Option<QueuePointer> {
+        fn _queue_account_get(&self, acct: AccountId) -> Option<QueuePointer> {
             let mut o_queue_pointer = None;
             let o_acct_pos_bid = self.bids.iter().position(|&x| x.acct == acct);
             match o_acct_pos_bid {
@@ -267,7 +277,15 @@ mod phalanx {
                 let bid = self.bids.first().unwrap();
                 let ask = self.asks.first().unwrap();
                 let trade_size = cmp::min(bid.size, ask.size);
+
+                //TODO The tigger trade should do the transfer + the event emitting
+                //Determine the correct amounts for the transfers + need to manage 2 tokens.
                 _trigger_trade(trade_size, price, &ask.acct, &bid.acct); // Check for success?
+                Self::env().emit_event(Transferred {
+                  from: Some(ask.acct),
+                  to: Some(bid.acct),
+                  value: 100,
+              });
                 if bid.size == trade_size {
                     self.bids.remove(0);
                 } else {
@@ -286,7 +304,7 @@ mod phalanx {
 
         // Extrnal get command to retrieve current order for account
         #[ink(message)]
-        pub fn order_get(&mut self, acct: AccountId) -> Option<Order> {
+        pub fn order_get(&self, acct: AccountId) -> Option<Order> {
           self._queue_account_get(acct);
 
 
